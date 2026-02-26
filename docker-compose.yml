@@ -1,11 +1,11 @@
 services:
   cli:
-    image: ${CLI_IMAGE:-alpine:3.20}
+    image: ${CLI_IMAGE:-node:22-bookworm}
     container_name: bot-cli
     init: true
     stdin_open: true
     tty: true
-    command: ["sh"]
+    command: ["bash"]
     networks:
       - coolify
 
