@@ -1,7 +1,10 @@
 services:
-  cli:
-    image: ${CLI_IMAGE:-node:22-bookworm}
-    container_name: bot-cli
+  openclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${OPENCLAW_IMAGE:-openclaw-runtime:latest}
+    container_name: openclaw
     restart: unless-stopped
     init: true
     stdin_open: true
@@ -9,11 +12,31 @@ services:
     environment:
       MINIMAX_API_KEY: ${MINIMAX_API_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
     volumes:
       - openclaw_data:/root/.openclaw
-    command: ["bash"]
+    expose:
+      - "18789"
+    command:
+      - bash
+      - -lc
+      - |
+        set -e
+        openclaw config set gateway.mode local
+        openclaw config set gateway.controlUi.allowedOrigins '["https://bot.da-tica.com","http://localhost:18789"]'
+        openclaw config set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback false
+        openclaw doctor --fix || true
+        exec openclaw gateway --bind lan --port 18789 --allow-unconfigured
     networks:
       - coolify
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.routers.openclaw.rule=Host(`bot.da-tica.com`)
+      - traefik.http.routers.openclaw.entrypoints=https
+      - traefik.http.routers.openclaw.tls=true
+      - traefik.http.routers.openclaw.tls.certresolver=letsencrypt
+      - traefik.http.services.openclaw.loadbalancer.server.port=18789
 
 volumes:
   openclaw_data:
