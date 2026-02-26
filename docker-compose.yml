@@ -1,0 +1,32 @@
+services:
+  app:
+    image: ${APP_IMAGE:-nginx:alpine}
+    restart: unless-stopped
+    init: true
+    container_name: bot-app
+    expose:
+      - "8080"
+    networks:
+      - coolify
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.routers.bot-app.rule=Host(`bot.da-tica.com`)
+      - traefik.http.routers.bot-app.entrypoints=https
+      - traefik.http.routers.bot-app.tls=true
+      - traefik.http.routers.bot-app.tls.certresolver=letsencrypt
+      - traefik.http.services.bot-app.loadbalancer.server.port=8080
+
+  cli:
+    image: ${CLI_IMAGE:-alpine:3.20}
+    container_name: bot-cli
+    init: true
+    stdin_open: true
+    tty: true
+    command: ["sh"]
+    networks:
+      - coolify
+
+networks:
+  coolify:
+    external: true

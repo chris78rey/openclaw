@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sumar Numeros"
+  short_description: "Suma listas de numeros enteros o decimales"
+  default_prompt: "Suma los numeros que te entregue el usuario y devuelve el total."
