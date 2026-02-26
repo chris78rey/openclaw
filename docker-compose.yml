@@ -1,10 +1,13 @@
 services:
+
+  # ─────────────────────────────────────────
+  # 1. OPENCLAW — Bot Telegram + Gateway
+  # ─────────────────────────────────────────
   openclaw:
     build:
       context: .
       dockerfile: Dockerfile
     image: ${OPENCLAW_IMAGE:-openclaw-runtime:latest}
-    container_name: openclaw
     restart: unless-stopped
     init: true
     stdin_open: true
@@ -23,8 +26,6 @@ services:
       - -lc
       - |
         set -e
-        # Reset config para garantizar deploy limpio y replicable
-        rm -f /root/.openclaw/openclaw.json
         test -n "${OPENCLAW_GATEWAY_TOKEN}"
         test -n "${TELEGRAM_BOT_TOKEN}"
         test -n "${OPENROUTER_API_KEY}"
@@ -44,6 +45,8 @@ services:
         exec openclaw gateway --bind lan --port 18789 --allow-unconfigured
     networks:
       - coolify
+    depends_on:
+      - rag-api
     labels:
       - traefik.enable=true
       - traefik.docker.network=coolify
@@ -52,8 +55,77 @@ services:
       - traefik.http.routers.openclaw.tls=true
       - traefik.http.routers.openclaw.tls.certresolver=letsencrypt
       - traefik.http.services.openclaw.loadbalancer.server.port=18789
+
+  # ─────────────────────────────────────────
+  # 2. RAG API — FastAPI admin + consulta
+  # ─────────────────────────────────────────
+  rag-api:
+    build:
+      context: ./rag-api
+      dockerfile: Dockerfile
+    image: rag-api:latest
+    restart: unless-stopped
+    environment:
+      ADMIN_TOKEN: ${RAG_ADMIN_TOKEN}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      OLLAMA_HOST: ollama
+      OLLAMA_PORT: 11434
+      EMBED_MODEL: nomic-embed-text
+    volumes:
+      - rag_uploads:/app/uploads
+    expose:
+      - "8000"
+    networks:
+      - coolify
+    depends_on:
+      - qdrant
+      - ollama
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.routers.rag-api.rule=Host(`rag.da-tica.com`)
+      - traefik.http.routers.rag-api.entrypoints=https
+      - traefik.http.routers.rag-api.tls=true
+      - traefik.http.routers.rag-api.tls.certresolver=letsencrypt
+      - traefik.http.services.rag-api.loadbalancer.server.port=8000
+
+  # ─────────────────────────────────────────
+  # 3. QDRANT — Motor de vectores
+  # ─────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    volumes:
+      - /opt/qdrant_data:/qdrant/storage   # en VPS, nunca se borra con redeployos
+    expose:
+      - "6333"
+      - "6334"
+    networks:
+      - coolify
+
+  # ─────────────────────────────────────────
+  # 4. OLLAMA — Embeddings local
+  # ─────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - /opt/ollama_data:/root/.ollama     # modelos en VPS, no se re-descargan
+    expose:
+      - "11434"
+    networks:
+      - coolify
+    entrypoint: >
+      sh -c "ollama serve &
+             sleep 5 &&
+             ollama pull nomic-embed-text &&
+             wait"
+
 volumes:
-  openclaw_data:
+  openclaw_data:    # estado OpenClaw — persiste entre redeployos
+  rag_uploads:      # archivos subidos por admin
+
 networks:
   coolify:
     external: true
