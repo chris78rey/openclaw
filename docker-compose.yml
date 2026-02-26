@@ -23,6 +23,8 @@ services:
       - -lc
       - |
         set -e
+        # Reset config para garantizar deploy limpio y replicable
+        rm -f /root/.openclaw/openclaw.json
         test -n "${OPENCLAW_GATEWAY_TOKEN}"
         test -n "${TELEGRAM_BOT_TOKEN}"
         test -n "${OPENROUTER_API_KEY}"
