@@ -2,12 +2,21 @@ services:
   cli:
     image: ${CLI_IMAGE:-node:22-bookworm}
     container_name: bot-cli
+    restart: unless-stopped
     init: true
     stdin_open: true
     tty: true
+    environment:
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    volumes:
+      - openclaw_data:/root/.openclaw
     command: ["bash"]
     networks:
       - coolify
+
+volumes:
+  openclaw_data:
 
 networks:
   coolify:
