@@ -41,6 +41,7 @@ services:
         openclaw config set channels.telegram.dmPolicy open
         openclaw config set gateway.controlUi.allowedOrigins '["https://bot.da-tica.com","http://localhost:18789"]'
         openclaw config set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback false
+        openclaw config set gateway.trustedProxies '["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]' --json
         openclaw doctor --fix || true
         exec openclaw gateway --bind lan --port 18789 --allow-unconfigured
     networks:
