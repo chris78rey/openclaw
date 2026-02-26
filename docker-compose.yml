@@ -29,8 +29,8 @@ services:
         openclaw config set gateway.auth.token "${OPENCLAW_GATEWAY_TOKEN}"
         openclaw config set gateway.remote.token "${OPENCLAW_GATEWAY_TOKEN}"
         openclaw config set models.mode merge
-        openclaw config set models.providers.minimax.baseUrl "https://api.minimax.io/anthropic"
-        openclaw config set models.providers.minimax.api "anthropic-messages"
+        openclaw config set models.providers.minimax.baseUrl "https://api.minimax.io/v1"
+        openclaw config set models.providers.minimax.api "openai-completions"
         openclaw config set models.providers.minimax.apiKey "${MINIMAX_API_KEY}"
         openclaw config set agents.defaults.model.primary "minimax/MiniMax-M2.1"
         openclaw config set agents.defaults.model.fallbacks "[]" --json
@@ -52,10 +52,8 @@ services:
       - traefik.http.routers.openclaw.tls=true
       - traefik.http.routers.openclaw.tls.certresolver=letsencrypt
       - traefik.http.services.openclaw.loadbalancer.server.port=18789
-
 volumes:
   openclaw_data:
-
 networks:
   coolify:
     external: true
