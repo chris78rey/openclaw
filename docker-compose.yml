@@ -30,7 +30,6 @@ services:
         openclaw config set gateway.auth.token "${OPENCLAW_GATEWAY_TOKEN}"
         openclaw config set gateway.remote.token "${OPENCLAW_GATEWAY_TOKEN}"
         openclaw config set models.mode merge
-        openclaw config set models.providers.openrouter.apiKey "${OPENROUTER_API_KEY}"
         openclaw config set agents.defaults.model.primary "${MINIMAX_MODEL}"
         openclaw config set agents.defaults.model.fallbacks "[]" --json
         openclaw config set channels.telegram.enabled true
