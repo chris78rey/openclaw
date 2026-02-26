@@ -13,6 +13,7 @@ services:
       MINIMAX_API_KEY: ${MINIMAX_API_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      MINIMAX_MODEL: ${MINIMAX_MODEL:-minimax/MiniMax-M2.5}
     volumes:
       - openclaw_data:/root/.openclaw
     expose:
@@ -32,7 +33,7 @@ services:
         openclaw config set models.providers.minimax.baseUrl "https://api.minimax.io/v1"
         openclaw config set models.providers.minimax.api "openai-completions"
         openclaw config set models.providers.minimax.apiKey "${MINIMAX_API_KEY}"
-        openclaw config set agents.defaults.model.primary "minimax/MiniMax-M2.1"
+        openclaw config set agents.defaults.model.primary "${MINIMAX_MODEL}"
         openclaw config set agents.defaults.model.fallbacks "[]" --json
         openclaw config set channels.telegram.enabled true
         openclaw config set channels.telegram.botToken "${TELEGRAM_BOT_TOKEN}"
