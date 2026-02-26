@@ -36,8 +36,8 @@ services:
         openclaw config set agents.defaults.model.fallbacks "[]" --json
         openclaw config set channels.telegram.enabled true
         openclaw config set channels.telegram.botToken "${TELEGRAM_BOT_TOKEN}"
-        openclaw config set channels.telegram.dmPolicy open
         openclaw config set channels.telegram.allowFrom '["*"]' --json
+        openclaw config set channels.telegram.dmPolicy open
         openclaw config set gateway.controlUi.allowedOrigins '["https://bot.da-tica.com","http://localhost:18789"]'
         openclaw config set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback false
         openclaw doctor --fix || true
