@@ -22,7 +22,10 @@ services:
       - -lc
       - |
         set -e
+        test -n "${OPENCLAW_GATEWAY_TOKEN}"
         openclaw config set gateway.mode local
+        openclaw config set gateway.auth.token "${OPENCLAW_GATEWAY_TOKEN}"
+        openclaw config set gateway.remote.token "${OPENCLAW_GATEWAY_TOKEN}"
         openclaw config set gateway.controlUi.allowedOrigins '["https://bot.da-tica.com","http://localhost:18789"]'
         openclaw config set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback false
         openclaw doctor --fix || true
