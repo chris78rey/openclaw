@@ -10,10 +10,10 @@ services:
     stdin_open: true
     tty: true
     environment:
-      MINIMAX_API_KEY: ${MINIMAX_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
-      MINIMAX_MODEL: ${MINIMAX_MODEL:-minimax/MiniMax-M2.5}
+      MINIMAX_MODEL: ${MINIMAX_MODEL:-openrouter/minimax/minimax-m2.5}
     volumes:
       - openclaw_data:/root/.openclaw
     expose:
@@ -25,14 +25,12 @@ services:
         set -e
         test -n "${OPENCLAW_GATEWAY_TOKEN}"
         test -n "${TELEGRAM_BOT_TOKEN}"
-        test -n "${MINIMAX_API_KEY}"
+        test -n "${OPENROUTER_API_KEY}"
         openclaw config set gateway.mode local
         openclaw config set gateway.auth.token "${OPENCLAW_GATEWAY_TOKEN}"
         openclaw config set gateway.remote.token "${OPENCLAW_GATEWAY_TOKEN}"
         openclaw config set models.mode merge
-        openclaw config set models.providers.minimax.baseUrl "https://api.minimax.io/v1"
-        openclaw config set models.providers.minimax.api "openai-completions"
-        openclaw config set models.providers.minimax.apiKey "${MINIMAX_API_KEY}"
+        openclaw config set models.providers.openrouter.apiKey "${OPENROUTER_API_KEY}"
         openclaw config set agents.defaults.model.primary "${MINIMAX_MODEL}"
         openclaw config set agents.defaults.model.fallbacks "[]" --json
         openclaw config set channels.telegram.enabled true
