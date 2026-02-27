@@ -72,7 +72,7 @@ services:
       QDRANT_PORT: 6333
       OLLAMA_HOST: ollama
       OLLAMA_PORT: 11434
-      EMBED_MODEL: nomic-embed-text
+      EMBED_MODEL: bge-m3  # <--- MODELO TOP DE GAMA
     volumes:
       - rag_uploads:/app/uploads
     expose:
@@ -98,7 +98,7 @@ services:
     image: qdrant/qdrant:latest
     restart: unless-stopped
     volumes:
-      - /opt/qdrant_data:/qdrant/storage   # en VPS, nunca se borra con redeployos
+      - /opt/qdrant_data:/qdrant/storage
     expose:
       - "6333"
       - "6334"
@@ -112,7 +112,7 @@ services:
     image: ollama/ollama:latest
     restart: unless-stopped
     volumes:
-      - /opt/ollama_data:/root/.ollama     # modelos en VPS, no se re-descargan
+      - /opt/ollama_data:/root/.ollama
     expose:
       - "11434"
     networks:
@@ -120,12 +120,12 @@ services:
     entrypoint: >
       sh -c "ollama serve &
              sleep 5 &&
-             ollama pull nomic-embed-text &&
+             ollama pull bge-m3 &&
              wait"
 
 volumes:
-  openclaw_data:    # estado OpenClaw — persiste entre redeployos
-  rag_uploads:      # archivos subidos por admin
+  openclaw_data:
+  rag_uploads:
 
 networks:
   coolify:
