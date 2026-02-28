@@ -16,7 +16,8 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
-      MINIMAX_MODEL: ${MINIMAX_MODEL:-openrouter/minimax/minimax-m2.5}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/minimax/minimax-m2.5}
+      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-[]}
     volumes:
       - openclaw_data:/root/.openclaw
     expose:
@@ -29,12 +30,20 @@ services:
         test -n "${OPENCLAW_GATEWAY_TOKEN}"
         test -n "${TELEGRAM_BOT_TOKEN}"
         test -n "${OPENROUTER_API_KEY}"
+        test -n "${OPENROUTER_MODEL}"
+        case "${OPENROUTER_MODEL}" in
+          openrouter/*) ;;
+          *)
+            echo "OPENROUTER_MODEL debe comenzar con 'openrouter/'" >&2
+            exit 1
+            ;;
+        esac
         openclaw config set gateway.mode local
         openclaw config set gateway.auth.token "${OPENCLAW_GATEWAY_TOKEN}"
         openclaw config set gateway.remote.token "${OPENCLAW_GATEWAY_TOKEN}"
         openclaw config set models.mode merge
-        openclaw config set agents.defaults.model.primary "${MINIMAX_MODEL}"
-        openclaw config set agents.defaults.model.fallbacks "[]" --json
+        openclaw config set agents.defaults.model.primary "${OPENROUTER_MODEL}"
+        openclaw config set agents.defaults.model.fallbacks "${OPENROUTER_FALLBACK_MODELS}" --json
         openclaw config set channels.telegram.enabled true
         openclaw config set channels.telegram.botToken "${TELEGRAM_BOT_TOKEN}"
         openclaw config set channels.telegram.allowFrom '["*"]' --json
