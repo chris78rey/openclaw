@@ -7,7 +7,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${OPENCLAW_IMAGE:-openclaw-runtime:latest}
+    image: ${OPENCLAW_IMAGE:-openclaw-runtime:latest}   
     restart: unless-stopped
     init: true
     stdin_open: true
