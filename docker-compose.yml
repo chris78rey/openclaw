@@ -13,11 +13,11 @@ services:
     stdin_open: true
     tty: true
     environment:
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/minimax/minimax-m2.5}
-      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-[]}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-ollama-local}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      OLLAMA_FALLBACK_MODELS: '${OLLAMA_FALLBACK_MODELS:-["ollama/llama3.2:3b"]}'
     volumes:
       - openclaw_data:/root/.openclaw
     expose:
@@ -27,30 +27,71 @@ services:
       - -lc
       - |
         set -e
-        test -n "${OPENCLAW_GATEWAY_TOKEN}"
-        test -n "${TELEGRAM_BOT_TOKEN}"
-        test -n "${OPENROUTER_API_KEY}"
-        test -n "${OPENROUTER_MODEL}"
-        case "${OPENROUTER_MODEL}" in
-          openrouter/*) ;;
-          *)
-            echo "OPENROUTER_MODEL debe comenzar con 'openrouter/'" >&2
-            exit 1
-            ;;
-        esac
-        openclaw config set gateway.mode local
-        openclaw config set gateway.auth.token "${OPENCLAW_GATEWAY_TOKEN}"
-        openclaw config set gateway.remote.token "${OPENCLAW_GATEWAY_TOKEN}"
-        openclaw config set models.mode merge
-        openclaw config set agents.defaults.model.primary "${OPENROUTER_MODEL}"
-        openclaw config set agents.defaults.model.fallbacks "${OPENROUTER_FALLBACK_MODELS}" --json
-        openclaw config set channels.telegram.enabled true
-        openclaw config set channels.telegram.botToken "${TELEGRAM_BOT_TOKEN}"
-        openclaw config set channels.telegram.allowFrom '["*"]' --json
-        openclaw config set channels.telegram.dmPolicy open
-        openclaw config set gateway.controlUi.allowedOrigins '["https://bot.da-tica.com","http://localhost:18789"]'
-        openclaw config set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback false
-        openclaw config set gateway.trustedProxies '["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]' --json
+        test -n "$${OPENCLAW_GATEWAY_TOKEN}"
+        test -n "$${TELEGRAM_BOT_TOKEN}"
+        test -n "$${OLLAMA_API_KEY}"
+        test -n "$${OLLAMA_MODEL}"
+        mkdir -p /root/.openclaw
+        cat > /root/.openclaw/openclaw.json <<EOF
+        {
+          "gateway": {
+            "mode": "local",
+            "auth": { "token": "$${OPENCLAW_GATEWAY_TOKEN}" },
+            "remote": { "token": "$${OPENCLAW_GATEWAY_TOKEN}" },
+            "controlUi": {
+              "allowedOrigins": ["https://bot.da-tica.com", "http://localhost:18789"],
+              "dangerouslyAllowHostHeaderOriginFallback": false
+            },
+            "trustedProxies": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+          },
+          "models": {
+            "mode": "merge",
+            "providers": {
+              "ollama": {
+                "api": "ollama",
+                "apiKey": "$${OLLAMA_API_KEY}",
+                "baseUrl": "http://ollama:11434",
+                "models": [
+                  {
+                    "id": "qwen2.5:7b",
+                    "name": "Qwen 2.5 7B",
+                    "reasoning": false,
+                    "input": ["text"],
+                    "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+                    "contextWindow": 8192,
+                    "maxTokens": 4096
+                  },
+                  {
+                    "id": "llama3.2:3b",
+                    "name": "Llama 3.2 3B",
+                    "reasoning": false,
+                    "input": ["text"],
+                    "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+                    "contextWindow": 8192,
+                    "maxTokens": 4096
+                  }
+                ]
+              }
+            }
+          },
+          "agents": {
+            "defaults": {
+              "model": {
+                "primary": "ollama/$${OLLAMA_MODEL}",
+                "fallbacks": $${OLLAMA_FALLBACK_MODELS}
+              }
+            }
+          },
+          "channels": {
+            "telegram": {
+              "enabled": true,
+              "botToken": "$${TELEGRAM_BOT_TOKEN}",
+              "allowFrom": ["*"],
+              "dmPolicy": "open"
+            }
+          }
+        }
+        EOF
         openclaw doctor --fix || true
         exec openclaw gateway --bind lan --port 18789 --allow-unconfigured
     networks:
@@ -115,7 +156,7 @@ services:
       - coolify
 
   # ─────────────────────────────────────────
-  # 4. OLLAMA — Embeddings local
+  # 4. OLLAMA — Chat + embeddings local
   # ─────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
@@ -129,6 +170,8 @@ services:
     entrypoint: >
       sh -c "ollama serve &
              sleep 5 &&
+             ollama pull qwen2.5:7b &&
+             ollama pull llama3.2:3b &&
              ollama pull bge-m3 &&
              wait"
 
