@@ -1,0 +1,4 @@
+interface:
+  display_name: "Empaquetar contexto LLM"
+  short_description: "Une archivos clave para revision LLM"
+  default_prompt: "Usa $empaquetar-contexto-llm para juntar los archivos clave del proyecto en un solo archivo de revision."
