@@ -8,6 +8,7 @@ EMBED_MODEL="${EMBED_MODEL:-bge-m3}"
 WEB_NAME_FILTER="${WEB_NAME_FILTER:-webapp}"
 OLLAMA_NAME_FILTER="${OLLAMA_NAME_FILTER:-ollama}"
 QDRANT_NAME_FILTER="${QDRANT_NAME_FILTER:-qdrant}"
+CHECK_TIMEOUT="${CHECK_TIMEOUT:-12}"
 FAILURES=0
 WARNINGS=0
 
@@ -54,6 +55,12 @@ need_any_command() {
     print_fix "Instala al menos uno de ellos y vuelve a ejecutar este script."
     exit 1
   fi
+}
+
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  timeout --foreground "$seconds" "$@"
 }
 
 get_container_id() {
@@ -136,7 +143,9 @@ check_container_in_network() {
 check_web_labels() {
   local cid="$1"
   local labels
+  local traefik_network
   labels="$(docker inspect --format '{{json .Config.Labels}}' "$cid" 2>/dev/null)"
+  traefik_network="$(docker inspect --format '{{ index .Config.Labels "traefik.docker.network" }}' "$cid" 2>/dev/null)"
 
   if printf '%s' "$labels" | grep -q 'traefik.enable'; then
     pass "webapp tiene labels de Traefik"
@@ -153,7 +162,7 @@ check_web_labels() {
     print_fix "Ajusta PUBLIC_WEB_HOST o las labels de Traefik y redeploy."
   fi
 
-  if printf '%s' "$labels" | grep -q '"traefik.docker.network":"'"${NETWORK}"'"'; then
+  if [[ "$traefik_network" == "$NETWORK" ]]; then
     pass "webapp declara la red de Traefik correcta (${NETWORK})"
   else
     fail "webapp no declara la red de Traefik correcta"
@@ -166,22 +175,34 @@ check_http_from_container() {
   local url="$2"
   local label="$3"
 
-  if docker exec "$cid" sh -lc "wget -qO- '$url' >/dev/null 2>&1 || curl -fsS '$url' >/dev/null 2>&1"; then
+  if run_with_timeout "$CHECK_TIMEOUT" docker exec "$cid" sh -lc "wget -T ${CHECK_TIMEOUT} -qO- '$url' >/dev/null 2>&1 || curl --max-time ${CHECK_TIMEOUT} -fsS '$url' >/dev/null 2>&1"; then
     pass "${label} responde en ${url}"
   else
-    fail "${label} no responde en ${url}"
-    print_fix "Revisa conectividad interna, nombre DNS del contenedor y logs del servicio destino."
+    local status=$?
+    if [[ "$status" -eq 124 ]]; then
+      fail "${label} excedio el timeout en ${url}"
+      print_fix "Hay un cuelgue de red o resolucion DNS. Revisa conectividad interna y nombre del servicio."
+    else
+      fail "${label} no responde en ${url}"
+      print_fix "Revisa conectividad interna, nombre DNS del contenedor y logs del servicio destino."
+    fi
   fi
 }
 
 check_http_local() {
   local url="$1"
   local label="$2"
-  if wget -qO- "$url" >/dev/null 2>&1 || curl -fsS "$url" >/dev/null 2>&1; then
+  if run_with_timeout "$CHECK_TIMEOUT" sh -lc "wget -T ${CHECK_TIMEOUT} -qO- '$url' >/dev/null 2>&1 || curl --max-time ${CHECK_TIMEOUT} -fsS '$url' >/dev/null 2>&1"; then
     pass "${label} responde en ${url}"
   else
-    fail "${label} no responde en ${url}"
-    print_fix "Si el contenedor esta healthy pero este endpoint falla, revisa Traefik o el puerto expuesto."
+    local status=$?
+    if [[ "$status" -eq 124 ]]; then
+      fail "${label} excedio el timeout en ${url}"
+      print_fix "El endpoint local quedo colgado. Revisa el servicio y el puerto expuesto."
+    else
+      fail "${label} no responde en ${url}"
+      print_fix "Si el contenedor esta healthy pero este endpoint falla, revisa Traefik o el puerto expuesto."
+    fi
   fi
 }
 
@@ -198,6 +219,7 @@ need_command docker
 need_command grep
 need_command sed
 need_command head
+need_command timeout
 need_any_command curl wget
 need_command getent
 
@@ -255,7 +277,7 @@ fi
 
 section "Modelos en Ollama"
 if [[ -n "$OLLAMA_CID" ]]; then
-  MODELS="$(docker exec "$OLLAMA_CID" ollama list 2>/dev/null || true)"
+  MODELS="$(run_with_timeout "$CHECK_TIMEOUT" docker exec "$OLLAMA_CID" ollama list 2>/dev/null || true)"
   if [[ -n "$MODELS" ]]; then
     pass "Ollama devuelve listado de modelos"
     printf '%s\n' "$MODELS"
@@ -273,7 +295,7 @@ if [[ -n "$OLLAMA_CID" ]]; then
     fi
   else
     fail "No pude obtener el listado de modelos de Ollama"
-    print_fix "Revisa logs de Ollama y prueba 'docker exec -it $OLLAMA_CID ollama list'."
+    print_fix "Revisa logs de Ollama y prueba 'docker exec -it $OLLAMA_CID ollama list'. Si tarda, aumenta CHECK_TIMEOUT."
   fi
 fi
 
@@ -286,11 +308,17 @@ if [[ -n "$DOMAIN" ]]; then
     print_fix "Apunta el subdominio al VPS y espera propagacion."
   fi
 
-  if curl -kfsS -H "Host: ${DOMAIN}" "https://${DOMAIN}/api/health" >/dev/null 2>&1; then
+  if run_with_timeout "$CHECK_TIMEOUT" curl -kfsS --max-time "$CHECK_TIMEOUT" -H "Host: ${DOMAIN}" "https://${DOMAIN}/api/health" >/dev/null 2>&1; then
     pass "El dominio publico responde por HTTPS"
   else
-    fail "El dominio publico no responde por HTTPS"
-    print_fix "Si webapp esta healthy, el problema suele ser Traefik/Coolify, labels o certificado."
+    local status=$?
+    if [[ "$status" -eq 124 ]]; then
+      fail "El dominio publico excedio el timeout por HTTPS"
+      print_fix "Traefik o el DNS podria estar colgando la peticion. Revisa proxy, certificado y resolucion."
+    else
+      fail "El dominio publico no responde por HTTPS"
+      print_fix "Si webapp esta healthy, el problema suele ser Traefik/Coolify, labels o certificado."
+    fi
   fi
 fi
 

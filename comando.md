@@ -1,35 +1,39 @@
-# Comandos para validar el stack en el VPS
+# Comandos para actualizar y ejecutar la version nueva del script
 
 Usa estos bloques tal cual.
 
-## 1. Entrar al directorio del proyecto
+## 1. Entrar al repo existente
 
 ```bash
-cd /ruta/al/proyecto
+cd ~/openclaw
 ```
 
-## 2. Dar permisos al script
+## 2. Actualizar referencias de la rama remota
+
+```bash
+git fetch origin web_sin_telegram
+```
+
+## 3. Traer la version nueva del script
+
+```bash
+git checkout origin/web_sin_telegram -- scripts/validate_vps_stack.sh
+```
+
+## 4. Dar permisos de ejecucion
 
 ```bash
 chmod +x scripts/validate_vps_stack.sh
 ```
 
-## 3. Ejecutar validacion completa contra el dominio publico
+## 5. Ejecutar la validacion con timeout por defecto
 
 ```bash
 ./scripts/validate_vps_stack.sh bot.da-tica.com
 ```
 
-## 4. Si quieres usar otro dominio
+## 6. Ejecutar la validacion con mas margen si hace falta
 
 ```bash
-./scripts/validate_vps_stack.sh TU-DOMINIO.COM
-```
-
-## 5. Commit y push de este cambio en la rama actual
-
-```bash
-git add scripts/validate_vps_stack.sh comando.md
-git commit -m "chore(ops): add vps validation script"
-git push origin web_sin_telegram
+CHECK_TIMEOUT=20 ./scripts/validate_vps_stack.sh bot.da-tica.com
 ```
