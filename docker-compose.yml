@@ -40,7 +40,7 @@ services:
             "remote": { "token": "$${OPENCLAW_GATEWAY_TOKEN}" },
             "controlUi": {
               "allowedOrigins": ["https://bot.da-tica.com", "http://localhost:18789"],
-              "dangerouslyAllowHostHeaderOriginFallback": false
+              "dangerouslyAllowHostHeaderOriginFallback": true
             },
             "trustedProxies": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
           },
@@ -98,6 +98,7 @@ services:
       - coolify
     depends_on:
       - rag-api
+      - ollama
     labels:
       - traefik.enable=true
       - traefik.docker.network=coolify
