@@ -53,7 +53,7 @@ services:
       QDRANT_PORT: 6333
       OLLAMA_HOST: ollama
       OLLAMA_PORT: 11434
-      CHAT_MODEL: ${CHAT_MODEL:-deepseek-r1:8b}
+      CHAT_MODEL: ${CHAT_MODEL:-llama3.1:8b}
       EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
       EMBED_DIM: ${EMBED_DIM:-1024}
       RAG_TOP_K: ${RAG_TOP_K:-10}
@@ -122,7 +122,7 @@ services:
         done
         echo '[init] Lanzando descarga de modelos en background...'
         (
-          ollama pull ${CHAT_MODEL:-deepseek-r1:8b}
+          ollama pull ${CHAT_MODEL:-llama3.1:8b}
           ollama pull ${EMBED_MODEL:-bge-m3}
           echo '[init] Modelos listos'
         ) &
