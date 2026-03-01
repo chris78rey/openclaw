@@ -29,14 +29,13 @@ services:
     init: true
     stdin_open: true
     tty: true
-    sysctls:
-      - net.ipv6.conf.all.disable_ipv6=1
     logging: &default-logging
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
     environment:
+      NODE_OPTIONS: "--dns-result-order=ipv4first"
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
       OLLAMA_API_KEY: ${OLLAMA_API_KEY:-ollama-local}
