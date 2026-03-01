@@ -5,7 +5,9 @@ const modelSelect = document.getElementById("model-select");
 const uploadStatus = document.getElementById("upload-status");
 const chatStatus = document.getElementById("chat-status");
 const messages = document.getElementById("messages");
-const sources = document.getElementById("sources");
+const chatForm = document.getElementById("chat-form");
+const chatInput = document.getElementById("chat-input");
+const chatSubmit = chatForm.querySelector("button[type='submit']");
 
 const selectedCollections = new Set();
 
@@ -62,28 +64,10 @@ function renderCollections(collections) {
   }
 }
 
-function renderSources(items) {
-  sources.innerHTML = "";
-  if (!items.length) {
-    sources.innerHTML = '<div class="source-card"><p class="source-text">Sin fuentes para mostrar.</p></div>';
-    return;
-  }
-
-  for (const item of items) {
-    const card = document.createElement("article");
-    card.className = "source-card";
-
-    const meta = document.createElement("p");
-    meta.className = "source-meta";
-    meta.textContent = `${item.collection} | ${item.source} | score ${item.score.toFixed(3)}`;
-
-    const text = document.createElement("p");
-    text.className = "source-text";
-    text.textContent = item.text;
-
-    card.append(meta, text);
-    sources.appendChild(card);
-  }
+function setChatBusy(isBusy) {
+  chatInput.disabled = isBusy;
+  chatSubmit.disabled = isBusy;
+  chatSubmit.textContent = isBusy ? "Consultando..." : "Preguntar";
 }
 
 async function loadCollections() {
@@ -159,15 +143,22 @@ document.getElementById("upload-form").addEventListener("submit", async (event) 
   await loadCollections();
 });
 
-document.getElementById("chat-form").addEventListener("submit", async (event) => {
+chatInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    chatForm.requestSubmit();
+  }
+});
+
+chatForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const input = document.getElementById("chat-input");
-  const question = input.value.trim();
+  const question = chatInput.value.trim();
   if (!question) return;
 
   addMessage("user", question);
-  input.value = "";
+  chatInput.value = "";
   setStatus(chatStatus, "Consultando...");
+  setChatBusy(true);
 
   const response = await fetch("/api/chat", {
     method: "POST",
@@ -183,15 +174,21 @@ document.getElementById("chat-form").addEventListener("submit", async (event) =>
   if (!response.ok) {
     addMessage("assistant", payload.detail || "No pude responder.");
     setStatus(chatStatus, "Error");
+    setChatBusy(false);
+    chatInput.focus();
     return;
   }
 
   addMessage("assistant", payload.answer);
-  renderSources(payload.sources || []);
-  setStatus(chatStatus, "Listo");
+  setStatus(chatStatus, "Listo para otra pregunta");
+  chatInput.placeholder = "Haz otra pregunta sobre los mismos documentos...";
+  setChatBusy(false);
+  chatInput.focus();
 });
 
 Promise.all([loadCollections(), loadModels()]).catch(() => {
   setStatus(chatStatus, "Error");
   setStatus(uploadStatus, "Error");
 });
+
+chatInput.focus();
