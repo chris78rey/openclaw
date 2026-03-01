@@ -120,14 +120,16 @@ services:
           ollama list >/dev/null 2>&1 && break
           sleep 2
         done
-        echo '[init] Descargando modelos (skip si ya existen)...'
-        ollama pull ${CHAT_MODEL:-deepseek-r1:8b}
-        ollama pull ${EMBED_MODEL:-bge-m3}
-        echo '[init] Modelos listos'
+        echo '[init] Lanzando descarga de modelos en background...'
+        (
+          ollama pull ${CHAT_MODEL:-deepseek-r1:8b}
+          ollama pull ${EMBED_MODEL:-bge-m3}
+          echo '[init] Modelos listos'
+        ) &
         wait $$OLLAMA_PID
       "
     healthcheck:
-      test: ["CMD-SHELL", "ollama list | grep -q '${CHAT_MODEL:-deepseek-r1:8b}' && ollama list | grep -q '${EMBED_MODEL:-bge-m3}'"]
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1"]
       interval: 15s
       timeout: 10s
       retries: 20
