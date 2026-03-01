@@ -49,6 +49,12 @@ class CreateCollectionPayload(BaseModel):
     name: str = Field(min_length=2, max_length=64)
 
 
+class TextUploadPayload(BaseModel):
+    collection: str = Field(min_length=2, max_length=64)
+    text: str = Field(min_length=1)
+    source: str | None = None
+
+
 class ChatPayload(BaseModel):
     question: str = Field(min_length=1)
     collections: list[str] = Field(default_factory=list)
@@ -87,6 +93,63 @@ async def embed_text(http: httpx.AsyncClient, text: str) -> list[float]:
     return response.json()["embedding"]
 
 
+def is_vague_question(question: str) -> bool:
+    cleaned = re.sub(r"\s+", " ", question.strip().lower())
+    if len(cleaned) < 18:
+        return True
+    short_prompts = {
+        "awr",
+        "oracle",
+        "sql",
+        "esperas",
+        "cpu",
+        "memoria",
+        "rendimiento",
+    }
+    if cleaned in short_prompts:
+        return True
+    words = cleaned.split()
+    return len(words) <= 4
+
+
+async def rewrite_question(http: httpx.AsyncClient, question: str) -> str:
+    response = await http.post(
+        f"{OLLAMA_BASE}/api/chat",
+        json={
+            "model": CHAT_MODEL,
+            "stream": False,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Reescribe preguntas vagas para mejorar busquedas RAG. "
+                        "Manten la intencion original. "
+                        "No respondas la pregunta. "
+                        "Devuelve una sola pregunta en espanol claro, mas precisa y rica en contexto tecnico. "
+                        "No uses comillas, listas ni explicaciones."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": question,
+                },
+            ],
+        },
+        timeout=60,
+    )
+    response.raise_for_status()
+    rewritten = response.json()["message"]["content"].strip()
+    return rewritten or question
+
+
+def clean_answer_text(text: str) -> str:
+    cleaned = text.replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = re.sub(r"[\u2500-\u257F\u4E00-\u9FFF\u3400-\u4DBF]+", "", cleaned)
+    cleaned = re.sub(r"[^\S\n]+", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 async def call_llm(
     http: httpx.AsyncClient,
     question: str,
@@ -102,9 +165,12 @@ async def call_llm(
         )
 
     system_prompt = (
-        "Responde en espanol de forma clara y directa. "
+        "Responde en espanol claro, natural y profesional. "
         "Usa solo el contexto recuperado. "
-        "Si el contexto no alcanza, dilo explicitamente."
+        "Si el contexto no alcanza, dilo explicitamente. "
+        "Da una respuesta extensa, bien desarrollada y util. "
+        "Organiza la respuesta en parrafos claros o secciones simples cuando ayude. "
+        "No uses caracteres chinos, simbolos raros, iconos, emojis ni decoracion visual."
     )
     user_prompt = (
         "Contexto recuperado:\n\n"
@@ -125,7 +191,7 @@ async def call_llm(
         timeout=180,
     )
     response.raise_for_status()
-    return response.json()["message"]["content"].strip()
+    return clean_answer_text(response.json()["message"]["content"])
 
 
 def extract_text(file: UploadFile) -> str:
@@ -218,6 +284,43 @@ async def upload_document(
     }
 
 
+@app.post("/api/upload-text")
+async def upload_text(request: Request, payload: TextUploadPayload) -> dict[str, Any]:
+    http: httpx.AsyncClient = request.app.state.http
+    collection_name = ensure_collection(payload.collection)
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="No se recibio texto util")
+
+    chunks = chunk_text(text)
+    if not chunks:
+        raise HTTPException(status_code=400, detail="El texto no contiene contenido util")
+
+    source_name = (payload.source or "texto-manual").strip() or "texto-manual"
+    points: list[PointStruct] = []
+    for chunk in chunks:
+        vector = await embed_text(http, chunk)
+        points.append(
+            PointStruct(
+                id=str(uuid.uuid4()),
+                vector=vector,
+                payload={
+                    "text": chunk,
+                    "source": source_name,
+                    "collection": collection_name,
+                },
+            )
+        )
+
+    qdrant.upsert(collection_name=collection_name, points=points)
+    return {
+        "ok": True,
+        "collection": collection_name,
+        "source": source_name,
+        "chunks": len(points),
+    }
+
+
 @app.post("/api/chat")
 async def chat(request: Request, payload: ChatPayload) -> dict[str, Any]:
     total_started = perf_counter()
@@ -234,8 +337,15 @@ async def chat(request: Request, payload: ChatPayload) -> dict[str, Any]:
     if not question:
         raise HTTPException(status_code=400, detail="Pregunta vacia")
 
+    rewrite_ms = 0.0
+    retrieval_question = question
+    if is_vague_question(question):
+        rewrite_started = perf_counter()
+        retrieval_question = await rewrite_question(http, question)
+        rewrite_ms = round((perf_counter() - rewrite_started) * 1000, 2)
+
     embed_started = perf_counter()
-    vector = await embed_text(http, question)
+    vector = await embed_text(http, retrieval_question)
     embed_ms = round((perf_counter() - embed_started) * 1000, 2)
 
     search_started = perf_counter()
@@ -264,6 +374,7 @@ async def chat(request: Request, payload: ChatPayload) -> dict[str, Any]:
             "answer": "No encontre informacion relacionada en los documentos cargados.",
             "sources": [],
             "timings_ms": {
+                "rewrite": rewrite_ms,
                 "embed": embed_ms,
                 "search": search_ms,
                 "llm": 0.0,
@@ -279,6 +390,7 @@ async def chat(request: Request, payload: ChatPayload) -> dict[str, Any]:
         "answer": answer,
         "sources": top_matches,
         "timings_ms": {
+            "rewrite": rewrite_ms,
             "embed": embed_ms,
             "search": search_ms,
             "llm": llm_ms,

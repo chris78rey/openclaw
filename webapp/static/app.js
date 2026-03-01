@@ -8,6 +8,9 @@ const messages = document.getElementById("messages");
 const chatForm = document.getElementById("chat-form");
 const chatInput = document.getElementById("chat-input");
 const chatSubmit = chatForm.querySelector("button[type='submit']");
+const pasteForm = document.getElementById("paste-form");
+const pasteSource = document.getElementById("paste-source");
+const pasteText = document.getElementById("paste-text");
 
 const selectedCollections = new Set();
 
@@ -140,6 +143,36 @@ document.getElementById("upload-form").addEventListener("submit", async (event) 
 
   fileInput.value = "";
   setStatus(uploadStatus, `Listo: ${payload.chunks} fragmentos`);
+  await loadCollections();
+});
+
+pasteForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const collection = uploadCollection.value;
+  const text = pasteText.value.trim();
+  const source = pasteSource.value.trim();
+  if (!collection || !text) return;
+
+  setStatus(uploadStatus, "Guardando texto...");
+  const response = await fetch("/api/upload-text", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      collection,
+      text,
+      source: source || "texto-manual",
+    }),
+  });
+
+  const payload = await response.json();
+  if (!response.ok) {
+    setStatus(uploadStatus, payload.detail || "Error");
+    return;
+  }
+
+  pasteSource.value = "";
+  pasteText.value = "";
+  setStatus(uploadStatus, `Texto guardado: ${payload.chunks} fragmentos`);
   await loadCollections();
 });
 

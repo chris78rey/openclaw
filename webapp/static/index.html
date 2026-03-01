@@ -45,6 +45,22 @@
             <button type="submit">Subir al RAG</button>
           </form>
 
+          <form id="paste-form" class="stack-form">
+            <label>
+              Fuente manual
+              <input id="paste-source" type="text" placeholder="ej: awr-prod-2026-03-01" />
+            </label>
+            <label>
+              Texto pegado
+              <textarea
+                id="paste-text"
+                rows="8"
+                placeholder="Pega aqui un AWR, una salida SQL, notas tecnicas o cualquier texto fuente..."
+              ></textarea>
+            </label>
+            <button type="submit">Guardar texto como fuente</button>
+          </form>
+
           <div class="collections-block">
             <div class="panel-head small">
               <h3>Colecciones disponibles</h3>
