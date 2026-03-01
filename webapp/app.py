@@ -2,13 +2,14 @@ import io
 import os
 import re
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pdfplumber
 from docx import Document as DocxDocument
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -24,12 +25,22 @@ CHAT_MODEL = os.getenv("CHAT_MODEL", "llama3.2:3b")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "bge-m3")
 EMBED_DIM = int(os.getenv("EMBED_DIM", "1024"))
 TOP_K = int(os.getenv("RAG_TOP_K", "6"))
+OLLAMA_BASE = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
 qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-app = FastAPI(title="DA-TICA RAG Web")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.http = httpx.AsyncClient(timeout=180)
+    yield
+    await app.state.http.aclose()
+
+
+app = FastAPI(title="DA-TICA RAG Web", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -65,17 +76,22 @@ def ensure_collection(name: str) -> str:
     return collection
 
 
-async def embed_text(text: str) -> list[float]:
-    async with httpx.AsyncClient(timeout=120) as client:
-        response = await client.post(
-            f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/embeddings",
-            json={"model": EMBED_MODEL, "prompt": text},
-        )
-        response.raise_for_status()
-        return response.json()["embedding"]
+async def embed_text(http: httpx.AsyncClient, text: str) -> list[float]:
+    response = await http.post(
+        f"{OLLAMA_BASE}/api/embeddings",
+        json={"model": EMBED_MODEL, "prompt": text},
+        timeout=120,
+    )
+    response.raise_for_status()
+    return response.json()["embedding"]
 
 
-async def call_llm(question: str, context_blocks: list[dict[str, Any]], model: str | None) -> str:
+async def call_llm(
+    http: httpx.AsyncClient,
+    question: str,
+    context_blocks: list[dict[str, Any]],
+    model: str | None,
+) -> str:
     snippets = []
     for index, block in enumerate(context_blocks, start=1):
         snippets.append(
@@ -93,20 +109,20 @@ async def call_llm(question: str, context_blocks: list[dict[str, Any]], model: s
         + f"\n\nPregunta del usuario:\n{question}"
     )
 
-    async with httpx.AsyncClient(timeout=180) as client:
-        response = await client.post(
-            f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat",
-            json={
-                "model": model or CHAT_MODEL,
-                "stream": False,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            },
-        )
-        response.raise_for_status()
-        return response.json()["message"]["content"].strip()
+    response = await http.post(
+        f"{OLLAMA_BASE}/api/chat",
+        json={
+            "model": model or CHAT_MODEL,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        },
+        timeout=180,
+    )
+    response.raise_for_status()
+    return response.json()["message"]["content"].strip()
 
 
 def extract_text(file: UploadFile) -> str:
@@ -144,11 +160,11 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/models")
-async def models() -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/tags")
-        response.raise_for_status()
-        payload = response.json()
+async def models(request: Request) -> dict[str, Any]:
+    http: httpx.AsyncClient = request.app.state.http
+    response = await http.get(f"{OLLAMA_BASE}/api/tags", timeout=30)
+    response.raise_for_status()
+    payload = response.json()
     items = [model["name"] for model in payload.get("models", [])]
     return {"models": items, "default": CHAT_MODEL}
 
@@ -166,9 +182,11 @@ def create_collection(payload: CreateCollectionPayload) -> dict[str, str]:
 
 @app.post("/api/upload")
 async def upload_document(
+    request: Request,
     collection: str = Form(...),
     file: UploadFile = File(...),
 ) -> dict[str, Any]:
+    http: httpx.AsyncClient = request.app.state.http
     collection_name = ensure_collection(collection)
     text = extract_text(file).strip()
     if not text:
@@ -180,7 +198,7 @@ async def upload_document(
 
     points: list[PointStruct] = []
     for chunk in chunks:
-        vector = await embed_text(chunk)
+        vector = await embed_text(http, chunk)
         points.append(
             PointStruct(
                 id=str(uuid.uuid4()),
@@ -203,20 +221,23 @@ async def upload_document(
 
 
 @app.post("/api/chat")
-async def chat(payload: ChatPayload) -> dict[str, Any]:
-    collections = payload.collections or list_collection_names()
-    if not collections:
+async def chat(request: Request, payload: ChatPayload) -> dict[str, Any]:
+    http: httpx.AsyncClient = request.app.state.http
+    available_collections = list_collection_names()
+    target_collections = [
+        collection for collection in (payload.collections or available_collections)
+        if collection in available_collections
+    ]
+    if not target_collections:
         raise HTTPException(status_code=400, detail="No hay colecciones disponibles")
 
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Pregunta vacia")
 
-    vector = await embed_text(question)
+    vector = await embed_text(http, question)
     matches: list[dict[str, Any]] = []
-    for collection in collections:
-        if collection not in list_collection_names():
-            continue
+    for collection in target_collections:
         hits = qdrant.search(collection_name=collection, query_vector=vector, limit=TOP_K)
         for hit in hits:
             payload_data = hit.payload or {}
@@ -239,7 +260,7 @@ async def chat(payload: ChatPayload) -> dict[str, Any]:
             "sources": [],
         }
 
-    answer = await call_llm(question, top_matches, payload.model)
+    answer = await call_llm(http, question, top_matches, payload.model)
     return {
         "answer": answer,
         "sources": top_matches,

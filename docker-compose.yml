@@ -48,10 +48,6 @@ services:
     restart: unless-stopped
     init: true
     logging: *default-logging
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
     environment:
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6333
@@ -106,6 +102,9 @@ services:
     image: ollama/ollama:latest
     restart: unless-stopped
     logging: *default-logging
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_MAX_LOADED_MODELS: "2"
     volumes:
       - ollama_data:/root/.ollama
     expose:
@@ -130,7 +129,7 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "ollama list | grep -q '${CHAT_MODEL:-llama3.2:3b}' && ollama list | grep -q '${EMBED_MODEL:-bge-m3}'"]
       interval: 15s
-      timeout: 5s
+      timeout: 10s
       retries: 20
       start_period: 120s
     deploy:
