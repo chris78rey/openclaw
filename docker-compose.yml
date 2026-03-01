@@ -32,6 +32,7 @@ services:
         test -n "$${OLLAMA_API_KEY}"
         test -n "$${OLLAMA_MODEL}"
         mkdir -p /root/.openclaw
+        rm -f /root/.openclaw/openclaw.json
         cat > /root/.openclaw/openclaw.json <<EOF
         {
           "gateway": {
