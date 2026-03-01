@@ -16,13 +16,15 @@ QDRANT_PORT   = int(os.getenv("QDRANT_PORT", 6333))
 OLLAMA_HOST   = os.getenv("OLLAMA_HOST", "ollama")
 OLLAMA_PORT   = os.getenv("OLLAMA_PORT", "11434")
 EMBED_MODEL   = os.getenv("EMBED_MODEL", "nomic-embed-text")
-EMBED_DIM     = 768
+EMBED_DIM     = int(os.getenv("EMBED_DIM", "1024"))
+CLIENTS_DB_PATH = os.getenv("CLIENTS_DB_PATH", "/app/uploads/clients.json")
 TZ_EC         = timezone(timedelta(hours=-5))
 DEFAULT_LIMIT = 40
 
 # ─── Clientes ─────────────────────────────────────────────────────────────────
 qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-db     = TinyDB("/app/uploads/clients.json")
+os.makedirs(os.path.dirname(CLIENTS_DB_PATH), exist_ok=True)
+db     = TinyDB(CLIENTS_DB_PATH)
 Client = Query()
 
 app = FastAPI(title="RAG API — DA-TICA")

@@ -1,6 +1,45 @@
 version: "3.8"
 
 services:
+  rag-api:
+    build:
+      context: ./rag-api
+      dockerfile: Dockerfile
+    image: datica-rag-api:latest
+    restart: unless-stopped
+    init: true
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      OLLAMA_HOST: ollama
+      OLLAMA_PORT: 11434
+      EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
+      EMBED_DIM: ${EMBED_DIM:-1024}
+      CLIENTS_DB_PATH: /app/uploads/clients.json
+    volumes:
+      - rag_api_uploads:/app/uploads
+    expose:
+      - "8000"
+    networks:
+      - app_net
+    depends_on:
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   webapp:
     build:
       context: ./webapp
@@ -8,7 +47,7 @@ services:
     image: datica-rag-web:latest
     restart: unless-stopped
     init: true
-    logging: &default-logging
+    logging: *default-logging
       driver: json-file
       options:
         max-size: "10m"
@@ -100,6 +139,7 @@ services:
           memory: ${OLLAMA_MEM_LIMIT:-8G}
 
 volumes:
+  rag_api_uploads:
   qdrant_data:
   ollama_data:
 
