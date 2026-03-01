@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   webapp:
     build:
@@ -38,11 +40,16 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=${DOCKER_NETWORK:-coolify}
-      - traefik.http.routers.webapp.rule=Host(`${PUBLIC_WEB_HOST:-bot.da-tica.com}`)
-      - traefik.http.routers.webapp.entrypoints=https
-      - traefik.http.routers.webapp.tls=true
-      - traefik.http.routers.webapp.tls.certresolver=letsencrypt
-      - traefik.http.services.webapp.loadbalancer.server.port=8080
+      - "traefik.http.routers.${APP_ID:-datica-rag}-web.rule=Host(`${PUBLIC_WEB_HOST:-bot.da-tica.com}`)"
+      - "traefik.http.routers.${APP_ID:-datica-rag}-web.entrypoints=https"
+      - "traefik.http.routers.${APP_ID:-datica-rag}-web.tls=true"
+      - "traefik.http.routers.${APP_ID:-datica-rag}-web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.${APP_ID:-datica-rag}-web.loadbalancer.server.port=8080"
+      - "traefik.http.routers.${APP_ID:-datica-rag}-web-http.rule=Host(`${PUBLIC_WEB_HOST:-bot.da-tica.com}`)"
+      - "traefik.http.routers.${APP_ID:-datica-rag}-web-http.entrypoints=http"
+      - "traefik.http.routers.${APP_ID:-datica-rag}-web-http.middlewares=${APP_ID:-datica-rag}-redirect"
+      - "traefik.http.middlewares.${APP_ID:-datica-rag}-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.${APP_ID:-datica-rag}-redirect.redirectscheme.permanent=true"
 
   qdrant:
     image: qdrant/qdrant:latest
