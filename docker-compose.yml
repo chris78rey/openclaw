@@ -115,7 +115,7 @@ services:
           }
         }
         EOF
-        exec openclaw gateway --bind lan --port 18789
+        exec openclaw gateway --bind lan --port 18789 --allow-unconfigured
     networks:
       - app_net
     depends_on:
