@@ -1,22 +1,24 @@
 services:
-
-  # ─────────────────────────────────────────
-  # 1. OPENCLAW — Bot Telegram + Gateway
-  # ─────────────────────────────────────────
   openclaw:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${OPENCLAW_IMAGE:-openclaw-runtime:latest}   
+    image: ${OPENCLAW_IMAGE:-openclaw-runtime:latest}
     restart: unless-stopped
     init: true
     stdin_open: true
     tty: true
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
       OLLAMA_API_KEY: ${OLLAMA_API_KEY:-ollama-local}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      PUBLIC_BOT_HOST: ${PUBLIC_BOT_HOST:-bot.da-tica.com}
     volumes:
       - openclaw_data:/root/.openclaw
     expose:
@@ -39,8 +41,7 @@ services:
             "auth": { "token": "$${OPENCLAW_GATEWAY_TOKEN}" },
             "remote": { "token": "$${OPENCLAW_GATEWAY_TOKEN}" },
             "controlUi": {
-              "allowedOrigins": ["https://bot.da-tica.com", "http://localhost:18789"],
-              "dangerouslyAllowHostHeaderOriginFallback": true
+              "allowedOrigins": ["https://$${PUBLIC_BOT_HOST}", "http://localhost:18789"]
             },
             "trustedProxies": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
           },
@@ -92,93 +93,127 @@ services:
           }
         }
         EOF
-        exec openclaw gateway --bind lan --port 18789 --allow-unconfigured
+        exec openclaw gateway --bind lan --port 18789
     networks:
-      - coolify
+      - app_net
     depends_on:
-      - rag-api
-      - ollama
+      rag-api:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
     labels:
       - traefik.enable=true
-      - traefik.docker.network=coolify
-      - traefik.http.routers.openclaw.rule=Host(`bot.da-tica.com`)
+      - traefik.docker.network=${DOCKER_NETWORK:-coolify}
+      - traefik.http.routers.openclaw.rule=Host(`${PUBLIC_BOT_HOST:-bot.da-tica.com}`)
       - traefik.http.routers.openclaw.entrypoints=https
       - traefik.http.routers.openclaw.tls=true
       - traefik.http.routers.openclaw.tls.certresolver=letsencrypt
       - traefik.http.services.openclaw.loadbalancer.server.port=18789
 
-  # ─────────────────────────────────────────
-  # 2. RAG API — FastAPI admin + consulta
-  # ─────────────────────────────────────────
   rag-api:
     build:
       context: ./rag-api
       dockerfile: Dockerfile
     image: rag-api:latest
     restart: unless-stopped
+    logging: *default-logging
     environment:
       ADMIN_TOKEN: ${RAG_ADMIN_TOKEN}
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6333
       OLLAMA_HOST: ollama
       OLLAMA_PORT: 11434
-      EMBED_MODEL: bge-m3  # <--- MODELO TOP DE GAMA
+      EMBED_MODEL: bge-m3
     volumes:
       - rag_uploads:/app/uploads
     expose:
       - "8000"
     networks:
-      - coolify
+      - app_net
     depends_on:
-      - qdrant
-      - ollama
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     labels:
       - traefik.enable=true
-      - traefik.docker.network=coolify
-      - traefik.http.routers.rag-api.rule=Host(`rag.da-tica.com`)
+      - traefik.docker.network=${DOCKER_NETWORK:-coolify}
+      - traefik.http.routers.rag-api.rule=Host(`${PUBLIC_RAG_HOST:-rag.da-tica.com}`)
       - traefik.http.routers.rag-api.entrypoints=https
       - traefik.http.routers.rag-api.tls=true
       - traefik.http.routers.rag-api.tls.certresolver=letsencrypt
       - traefik.http.services.rag-api.loadbalancer.server.port=8000
 
-  # ─────────────────────────────────────────
-  # 3. QDRANT — Motor de vectores
-  # ─────────────────────────────────────────
   qdrant:
     image: qdrant/qdrant:latest
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - /opt/qdrant_data:/qdrant/storage
     expose:
       - "6333"
       - "6334"
     networks:
-      - coolify
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: ${QDRANT_MEM_LIMIT:-512M}
 
-  # ─────────────────────────────────────────
-  # 4. OLLAMA — Chat + embeddings local
-  # ─────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - /opt/ollama_data:/root/.ollama
     expose:
       - "11434"
     networks:
-      - coolify
+      - app_net
     entrypoint: >
-      sh -c "ollama serve &
-             sleep 5 &&
-             ollama pull qwen2.5:7b &&
-             ollama pull llama3.2:3b &&
-             ollama pull bge-m3 &&
-             wait"
+      sh -c "
+        ollama serve &
+        OLLAMA_PID=$$!
+        echo '[init] Esperando que Ollama arranque...'
+        for i in $$(seq 1 30); do
+          ollama list >/dev/null 2>&1 && break
+          sleep 2
+        done
+        echo '[init] Descargando modelos (skip si ya existen)...'
+        ollama pull qwen2.5:7b
+        ollama pull llama3.2:3b
+        ollama pull bge-m3
+        echo '[init] Modelos listos'
+        wait $$OLLAMA_PID
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q 'llama3.2:3b' && ollama list | grep -q 'qwen2.5:7b' && ollama list | grep -q 'bge-m3'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: ${OLLAMA_MEM_LIMIT:-4G}
 
 volumes:
   openclaw_data:
   rag_uploads:
 
 networks:
-  coolify:
+  app_net:
+    name: ${DOCKER_NETWORK:-coolify}
     external: true
