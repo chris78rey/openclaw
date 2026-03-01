@@ -93,7 +93,6 @@ services:
           }
         }
         EOF
-        openclaw doctor --fix || true
         exec openclaw gateway --bind lan --port 18789 --allow-unconfigured
     networks:
       - coolify
