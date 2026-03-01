@@ -92,6 +92,10 @@ async def call_llm(
     context_blocks: list[dict[str, Any]],
     model: str | None,
 ) -> str:
+    selected_model = model or CHAT_MODEL
+    if selected_model == EMBED_MODEL:
+        selected_model = CHAT_MODEL
+
     snippets = []
     for index, block in enumerate(context_blocks, start=1):
         snippets.append(
@@ -112,7 +116,7 @@ async def call_llm(
     response = await http.post(
         f"{OLLAMA_BASE}/api/chat",
         json={
-            "model": model or CHAT_MODEL,
+            "model": selected_model,
             "stream": False,
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -165,7 +169,11 @@ async def models(request: Request) -> dict[str, Any]:
     response = await http.get(f"{OLLAMA_BASE}/api/tags", timeout=30)
     response.raise_for_status()
     payload = response.json()
-    items = [model["name"] for model in payload.get("models", [])]
+    items = [
+        model["name"]
+        for model in payload.get("models", [])
+        if model.get("name") != EMBED_MODEL
+    ]
     return {"models": items, "default": CHAT_MODEL}
 
 
