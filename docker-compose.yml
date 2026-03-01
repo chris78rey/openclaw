@@ -1,4 +1,31 @@
+# ═══════════════════════════════════════════════════════════════
+#  DA-TICA — OpenClaw + RAG Stack (Producción portable)
+# ═══════════════════════════════════════════════════════════════
+#
+#  Variables requeridas en .env o Coolify:
+#    TELEGRAM_BOT_TOKEN, OPENCLAW_GATEWAY_TOKEN, RAG_ADMIN_TOKEN
+#
+#  Variables de personalización por VPS:
+#    PUBLIC_BOT_HOST    (default: bot.da-tica.com)
+#    PUBLIC_RAG_HOST    (default: rag.da-tica.com)
+#    OLLAMA_MODEL       (default: llama3.2:3b)
+#    OLLAMA_MEM_LIMIT   (default: 4G)
+#    QDRANT_MEM_LIMIT   (default: 512M)
+#    DOCKER_NETWORK     (default: coolify)
+#
+# ═══════════════════════════════════════════════════════════════
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
+
+  # ─────────────────────────────────────────
+  # 1. OPENCLAW — Bot Telegram + Gateway
+  # ─────────────────────────────────────────
   openclaw:
     build:
       context: .
@@ -8,11 +35,7 @@ services:
     init: true
     stdin_open: true
     tty: true
-    logging: &default-logging
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *default-logging
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
@@ -41,7 +64,7 @@ services:
             "auth": { "token": "$${OPENCLAW_GATEWAY_TOKEN}" },
             "remote": { "token": "$${OPENCLAW_GATEWAY_TOKEN}" },
             "controlUi": {
-              "allowedOrigins": ["https://$${PUBLIC_BOT_HOST}", "http://localhost:18789"]
+              "allowedOrigins": ["https://$${PUBLIC_BOT_HOST}"]
             },
             "trustedProxies": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
           },
@@ -93,9 +116,9 @@ services:
           }
         }
         EOF
-        exec openclaw gateway --bind lan --port 18789
+        exec openclaw gateway --bind lan --port 18789 --allow-unconfigured
     networks:
-      - app_net
+      - coolify
     depends_on:
       rag-api:
         condition: service_healthy
@@ -110,6 +133,9 @@ services:
       - traefik.http.routers.openclaw.tls.certresolver=letsencrypt
       - traefik.http.services.openclaw.loadbalancer.server.port=18789
 
+  # ─────────────────────────────────────────
+  # 2. RAG API — FastAPI admin + consulta
+  # ─────────────────────────────────────────
   rag-api:
     build:
       context: ./rag-api
@@ -129,13 +155,14 @@ services:
     expose:
       - "8000"
     networks:
-      - app_net
+      - coolify
     depends_on:
       qdrant:
         condition: service_healthy
       ollama:
         condition: service_healthy
     healthcheck:
+      # Python existe seguro en la imagen — no depende de curl/wget
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 15s
       timeout: 5s
@@ -150,18 +177,25 @@ services:
       - traefik.http.routers.rag-api.tls.certresolver=letsencrypt
       - traefik.http.services.rag-api.loadbalancer.server.port=8000
 
+  # ─────────────────────────────────────────
+  # 3. QDRANT — Motor de vectores
+  # ─────────────────────────────────────────
   qdrant:
     image: qdrant/qdrant:latest
     restart: unless-stopped
     logging: *default-logging
+    # TODO: Activar cuando rag-api soporte api_key en QdrantClient
+    # environment:
+    #   QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
     volumes:
-      - /opt/qdrant_data:/qdrant/storage
+      - qdrant_data:/qdrant/storage
     expose:
       - "6333"
       - "6334"
     networks:
-      - app_net
+      - coolify
     healthcheck:
+      # Qdrant image (Debian-based) trae wget
       test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
       interval: 10s
       timeout: 5s
@@ -172,16 +206,19 @@ services:
         limits:
           memory: ${QDRANT_MEM_LIMIT:-512M}
 
+  # ─────────────────────────────────────────
+  # 4. OLLAMA — Chat + embeddings local
+  # ─────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
     logging: *default-logging
     volumes:
-      - /opt/ollama_data:/root/.ollama
+      - ollama_data:/root/.ollama
     expose:
       - "11434"
     networks:
-      - app_net
+      - coolify
     entrypoint: >
       sh -c "
         ollama serve &
@@ -195,10 +232,11 @@ services:
         ollama pull qwen2.5:7b
         ollama pull llama3.2:3b
         ollama pull bge-m3
-        echo '[init] Modelos listos'
+        echo '[init] Modelos listos ✓'
         wait $$OLLAMA_PID
       "
     healthcheck:
+      # Verifica que los 3 modelos estén realmente descargados
       test: ["CMD-SHELL", "ollama list | grep -q 'llama3.2:3b' && ollama list | grep -q 'qwen2.5:7b' && ollama list | grep -q 'bge-m3'"]
       interval: 15s
       timeout: 5s
@@ -212,8 +250,10 @@ services:
 volumes:
   openclaw_data:
   rag_uploads:
+  qdrant_data:
+  ollama_data:
 
 networks:
-  app_net:
+  coolify:
     name: ${DOCKER_NETWORK:-coolify}
     external: true
