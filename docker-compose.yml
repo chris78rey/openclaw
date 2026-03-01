@@ -56,7 +56,7 @@ services:
       CHAT_MODEL: ${CHAT_MODEL:-qwen2.5:0.5b}
       EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
       EMBED_DIM: ${EMBED_DIM:-1024}
-      RAG_TOP_K: ${RAG_TOP_K:-6}
+      RAG_TOP_K: ${RAG_TOP_K:-10}
     expose:
       - "8080"
     networks:
