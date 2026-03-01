@@ -1,158 +1,27 @@
-# ═══════════════════════════════════════════════════════════════
-#  DA-TICA — OpenClaw + RAG Stack (Producción portable)
-# ═══════════════════════════════════════════════════════════════
-#
-#  Variables requeridas en .env o Coolify:
-#    TELEGRAM_BOT_TOKEN, OPENCLAW_GATEWAY_TOKEN, RAG_ADMIN_TOKEN
-#
-#  Variables de personalización por VPS:
-#    PUBLIC_BOT_HOST    (default: bot.da-tica.com)
-#    PUBLIC_RAG_HOST    (default: rag.da-tica.com)
-#    OLLAMA_MODEL       (default: llama3.2:3b)
-#    OLLAMA_MEM_LIMIT   (default: 8G)
-#    QDRANT_MEM_LIMIT   (default: 512M)
-#    DOCKER_NETWORK     (default: coolify)
-#
-# ═══════════════════════════════════════════════════════════════
-
 services:
-
-  # ─────────────────────────────────────────
-  # 1. OPENCLAW — Bot Telegram + Gateway
-  # ─────────────────────────────────────────
-  openclaw:
+  webapp:
     build:
-      context: .
+      context: ./webapp
       dockerfile: Dockerfile
-    image: ${OPENCLAW_IMAGE:-openclaw-runtime:latest}
+    image: datica-rag-web:latest
     restart: unless-stopped
     init: true
-    stdin_open: true
-    tty: true
     logging: &default-logging
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
     environment:
-      NODE_OPTIONS: "--dns-result-order=ipv4first"
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
-      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-ollama-local}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
-      PUBLIC_BOT_HOST: ${PUBLIC_BOT_HOST:-bot.da-tica.com}
-    volumes:
-      - openclaw_data:/root/.openclaw
-    expose:
-      - "18789"
-    command:
-      - bash
-      - -lc
-      - |
-        set -e
-        test -n "$${OPENCLAW_GATEWAY_TOKEN}"
-        test -n "$${TELEGRAM_BOT_TOKEN}"
-        test -n "$${OLLAMA_API_KEY}"
-        test -n "$${OLLAMA_MODEL}"
-        mkdir -p /root/.openclaw
-        rm -f /root/.openclaw/openclaw.json
-        cat > /root/.openclaw/openclaw.json <<EOF
-        {
-          "gateway": {
-            "mode": "local",
-            "auth": { "token": "$${OPENCLAW_GATEWAY_TOKEN}" },
-            "remote": { "token": "$${OPENCLAW_GATEWAY_TOKEN}" },
-            "controlUi": {
-              "allowedOrigins": ["https://$${PUBLIC_BOT_HOST}"]
-            },
-            "trustedProxies": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
-          },
-          "models": {
-            "mode": "merge",
-            "providers": {
-              "ollama": {
-                "api": "openai-compatible",
-                "apiKey": "${OLLAMA_API_KEY}",
-                "baseUrl": "http://ollama:11434/v1",
-                "models": [
-                  {
-                    "id": "qwen2.5:7b",
-                    "name": "Qwen 2.5 7B",
-                    "reasoning": false,
-                    "input": ["text"],
-                    "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-                    "contextWindow": 32768,
-                    "maxTokens": 8192
-                  },
-                  {
-                    "id": "llama3.2:3b",
-                    "name": "Llama 3.2 3B",
-                    "reasoning": false,
-                    "input": ["text"],
-                    "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-                    "contextWindow": 32768,
-                    "maxTokens": 8192
-                  }
-                ]
-              }
-            }
-          },
-          "agents": {
-            "defaults": {
-              "model": {
-                "primary": "ollama/$${OLLAMA_MODEL}",
-                "fallbacks": ["ollama/qwen2.5:7b"]
-              }
-            }
-          },
-          "channels": {
-            "telegram": {
-              "enabled": true,
-              "botToken": "$${TELEGRAM_BOT_TOKEN}",
-              "allowFrom": ["*"],
-              "dmPolicy": "open"
-            }
-          }
-        }
-        EOF
-        exec openclaw gateway --bind lan --port 18789 --allow-unconfigured
-    networks:
-      - app_net
-    depends_on:
-      rag-api:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=${DOCKER_NETWORK:-coolify}
-      - traefik.http.routers.openclaw.rule=Host(`${PUBLIC_BOT_HOST:-bot.da-tica.com}`)
-      - traefik.http.routers.openclaw.entrypoints=https
-      - traefik.http.routers.openclaw.tls=true
-      - traefik.http.routers.openclaw.tls.certresolver=letsencrypt
-      - traefik.http.services.openclaw.loadbalancer.server.port=18789
-
-  # ─────────────────────────────────────────
-  # 2. RAG API — FastAPI admin + consulta
-  # ─────────────────────────────────────────
-  rag-api:
-    build:
-      context: ./rag-api
-      dockerfile: Dockerfile
-    image: rag-api:latest
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      ADMIN_TOKEN: ${RAG_ADMIN_TOKEN}
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6333
       OLLAMA_HOST: ollama
       OLLAMA_PORT: 11434
-      EMBED_MODEL: bge-m3
-    volumes:
-      - rag_uploads:/app/uploads
+      CHAT_MODEL: ${CHAT_MODEL:-llama3.2:3b}
+      EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
+      EMBED_DIM: ${EMBED_DIM:-1024}
+      RAG_TOP_K: ${RAG_TOP_K:-6}
     expose:
-      - "8000"
+      - "8080"
     networks:
       - app_net
     depends_on:
@@ -161,23 +30,20 @@ services:
       ollama:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')\""]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 20s
     labels:
       - traefik.enable=true
       - traefik.docker.network=${DOCKER_NETWORK:-coolify}
-      - traefik.http.routers.rag-api.rule=Host(`${PUBLIC_RAG_HOST:-rag.da-tica.com}`)
-      - traefik.http.routers.rag-api.entrypoints=https
-      - traefik.http.routers.rag-api.tls=true
-      - traefik.http.routers.rag-api.tls.certresolver=letsencrypt
-      - traefik.http.services.rag-api.loadbalancer.server.port=8000
+      - traefik.http.routers.webapp.rule=Host(`${PUBLIC_WEB_HOST:-bot.da-tica.com}`)
+      - traefik.http.routers.webapp.entrypoints=https
+      - traefik.http.routers.webapp.tls=true
+      - traefik.http.routers.webapp.tls.certresolver=letsencrypt
+      - traefik.http.services.webapp.loadbalancer.server.port=8080
 
-  # ─────────────────────────────────────────
-  # 3. QDRANT — Motor de vectores
-  # ─────────────────────────────────────────
   qdrant:
     image: qdrant/qdrant:latest
     restart: unless-stopped
@@ -189,14 +55,7 @@ services:
       - "6334"
     networks:
       - app_net
-    deploy:
-      resources:
-        limits:
-          memory: ${QDRANT_MEM_LIMIT:-512M}
 
-  # ─────────────────────────────────────────
-  # 4. OLLAMA — Chat + embeddings local
-  # ─────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
@@ -217,14 +76,13 @@ services:
           sleep 2
         done
         echo '[init] Descargando modelos (skip si ya existen)...'
-        ollama pull qwen2.5:7b
-        ollama pull llama3.2:3b
-        ollama pull bge-m3
+        ollama pull ${CHAT_MODEL:-llama3.2:3b}
+        ollama pull ${EMBED_MODEL:-bge-m3}
         echo '[init] Modelos listos'
         wait $$OLLAMA_PID
       "
     healthcheck:
-      test: ["CMD-SHELL", "ollama list | grep -q 'llama3.2:3b' && ollama list | grep -q 'qwen2.5:7b' && ollama list | grep -q 'bge-m3'"]
+      test: ["CMD-SHELL", "ollama list | grep -q '${CHAT_MODEL:-llama3.2:3b}' && ollama list | grep -q '${EMBED_MODEL:-bge-m3}'"]
       interval: 15s
       timeout: 5s
       retries: 20
@@ -235,8 +93,6 @@ services:
           memory: ${OLLAMA_MEM_LIMIT:-8G}
 
 volumes:
-  openclaw_data:
-  rag_uploads:
   qdrant_data:
   ollama_data:
 

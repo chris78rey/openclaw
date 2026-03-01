@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DA-TICA RAG</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">DA-TICA</p>
+        <h1>RAG web simple</h1>
+        <p class="hero-copy">
+          Sube documentos, organiza colecciones y pregunta directo sobre tu base.
+        </p>
+      </header>
+
+      <main class="grid">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Documentos</h2>
+            <span id="upload-status" class="status-pill">Listo</span>
+          </div>
+
+          <form id="collection-form" class="stack-form">
+            <label>
+              Nueva coleccion
+              <div class="inline-row">
+                <input id="collection-name" type="text" placeholder="ej: contratos-2026" />
+                <button type="submit">Crear</button>
+              </div>
+            </label>
+          </form>
+
+          <form id="upload-form" class="stack-form">
+            <label>
+              Coleccion
+              <select id="upload-collection"></select>
+            </label>
+            <label>
+              Archivo
+              <input id="upload-file" type="file" accept=".pdf,.docx,.txt,.md" />
+            </label>
+            <button type="submit">Subir al RAG</button>
+          </form>
+
+          <div class="collections-block">
+            <div class="panel-head small">
+              <h3>Colecciones disponibles</h3>
+            </div>
+            <div id="collection-list" class="tag-list"></div>
+          </div>
+        </section>
+
+        <section class="panel chat-panel">
+          <div class="panel-head">
+            <h2>Chat</h2>
+            <span id="chat-status" class="status-pill">Esperando</span>
+          </div>
+
+          <div class="toolbar">
+            <label>
+              Modelo
+              <select id="model-select"></select>
+            </label>
+          </div>
+
+          <div class="collection-picker">
+            <p class="picker-title">Buscar en estas colecciones</p>
+            <div id="chat-collections" class="tag-list selectable"></div>
+          </div>
+
+          <div id="messages" class="messages">
+            <article class="message assistant">
+              <p>Sube documentos y luego haz una pregunta para responder con RAG.</p>
+            </article>
+          </div>
+
+          <form id="chat-form" class="chat-form">
+            <textarea
+              id="chat-input"
+              rows="4"
+              placeholder="Pregunta algo sobre los documentos cargados..."
+            ></textarea>
+            <button type="submit">Preguntar</button>
+          </form>
+
+          <div class="sources-block">
+            <div class="panel-head small">
+              <h3>Fuentes usadas</h3>
+            </div>
+            <div id="sources" class="sources"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+  </html>
