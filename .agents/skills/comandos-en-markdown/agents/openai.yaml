@@ -1,0 +1,4 @@
+interface:
+  display_name: "Comandos en Markdown"
+  short_description: "Deja comandos listos en comando.md"
+  default_prompt: "Usa $comandos-en-markdown para dejar los comandos listos en comando.md."
