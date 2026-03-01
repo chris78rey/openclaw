@@ -1,89 +1,101 @@
-# Comandos para probar la misma pregunta con tres modelos
+# Comandos para priorizar velocidad sin reindexar
 
-Usa estos bloques tal cual.
+Objetivo: probar `qwen2.5:0.5b` sobre la coleccion `oracle` sin tocar embeddings ni Qdrant.
 
-La pregunta de prueba sera:
+No reindexes todavia. Solo cambia `CHAT_MODEL`.
+
+## 1. Ver modelos disponibles en Ollama
+
+```bash
+docker exec $(docker ps -qf name=ollama) ollama list
+```
+
+## 2. Descargar `qwen2.5:0.5b`
+
+```bash
+docker exec $(docker ps -qf name=ollama) ollama pull qwen2.5:0.5b
+```
+
+## 3. Cambiar el modelo de chat en Coolify o en tu `.env`
 
 ```text
-Como se deben subir los archivos?
+CHAT_MODEL=qwen2.5:0.5b
 ```
 
-## 1. Probar `llama3.2:3b` directo contra Ollama
+## 4. Redeployar solo `webapp` y `ollama`
+
+Si usas Docker Compose directo:
 
 ```bash
-docker exec $(docker ps -qf name=webapp) sh -lc '
-curl http://ollama:11434/api/generate \
-  -H "Content-Type: application/json" \
-  -d '"'"'{
-    "model": "llama3.2:3b",
-    "prompt": "Como se deben subir los archivos?",
-    "stream": false
-  }'"'"'
-'
+docker compose up -d --build webapp ollama
 ```
 
-## 2. Probar `qwen2.5:7b` directo contra Ollama
+## 5. Verificar que la API expone el nuevo modelo por defecto
 
 ```bash
-docker exec $(docker ps -qf name=webapp) sh -lc '
-curl http://ollama:11434/api/generate \
-  -H "Content-Type: application/json" \
-  -d '"'"'{
-    "model": "qwen2.5:7b",
-    "prompt": "Como se deben subir los archivos?",
-    "stream": false
-  }'"'"'
-'
+curl -s https://bot.da-tica.com/api/models
 ```
 
-## 3. Probar `bge-m3` directo contra Ollama
-
-`bge-m3` es un modelo de embeddings, no de chat. Este bloque sirve para confirmar que no debe usarse para responder preguntas.
+## 6. Medir primera consulta sobre `oracle`
 
 ```bash
-docker exec $(docker ps -qf name=webapp) sh -lc '
-curl http://ollama:11434/api/generate \
-  -H "Content-Type: application/json" \
-  -d '"'"'{
-    "model": "bge-m3",
-    "prompt": "Como se deben subir los archivos?",
-    "stream": false
-  }'"'"'
-'
-```
-
-## 4. Probar `llama3.2:3b` en la app web con RAG
-
-```bash
-curl https://bot.da-tica.com/api/chat \
+curl -s -o /tmp/oracle-fast-1.json -w "\nhttp_code=%{http_code}\ntime_starttransfer=%{time_starttransfer}\ntime_total=%{time_total}\n" \
+  https://bot.da-tica.com/api/chat \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "Como se deben subir los archivos?",
-    "collections": ["prueba"],
-    "model": "llama3.2:3b"
+    "question": "Como se debe arreglar el AWR?",
+    "collections": ["oracle"],
+    "model": null
   }'
 ```
 
-## 5. Probar `qwen2.5:7b` en la app web con RAG
+## 7. Medir 5 corridas calientes
 
 ```bash
-curl https://bot.da-tica.com/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question": "Como se deben subir los archivos?",
-    "collections": ["prueba"],
-    "model": "qwen2.5:7b"
-  }'
+for i in 1 2 3 4 5; do
+  echo "run=$i"
+  curl -s -o /dev/null -w "http_code=%{http_code} time_starttransfer=%{time_starttransfer} time_total=%{time_total}\n" \
+    https://bot.da-tica.com/api/chat \
+    -H "Content-Type: application/json" \
+    -d '{
+      "question": "Como se debe arreglar el AWR?",
+      "collections": ["oracle"],
+      "model": null
+    }'
+done
 ```
 
-## 6. Probar `bge-m3` en la app web con RAG
+## 8. Si quieres comparar contra el modelo anterior
 
 ```bash
-curl https://bot.da-tica.com/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question": "Como se deben subir los archivos?",
-    "collections": ["prueba"],
-    "model": "bge-m3"
-  }'
+for i in 1 2 3; do
+  echo "run=$i"
+  curl -s -o /dev/null -w "http_code=%{http_code} time_starttransfer=%{time_starttransfer} time_total=%{time_total}\n" \
+    https://bot.da-tica.com/api/chat \
+    -H "Content-Type: application/json" \
+    -d '{
+      "question": "Como se debe arreglar el AWR?",
+      "collections": ["oracle"],
+      "model": "llama3.2:3b"
+    }'
+done
+```
+
+## 9. Regla de decision
+
+Si `qwen2.5:0.5b` baja fuerte la latencia y la calidad sigue aceptable, dejalo como default.
+
+```text
+Prioridad velocidad:
+1. qwen2.5:0.5b
+```
+
+## 10. Solo si luego cambias embeddings, ahi si reindexas
+
+Esto NO es para ahora. Solo aplica si cambias `EMBED_MODEL` o `EMBED_DIM`.
+
+```text
+Cambiar CHAT_MODEL: no reindexa
+Cambiar EMBED_MODEL: si reindexa
+Cambiar EMBED_DIM: si reindexa
 ```

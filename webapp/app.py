@@ -4,6 +4,7 @@ import re
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import httpx
@@ -219,6 +220,7 @@ async def upload_document(
 
 @app.post("/api/chat")
 async def chat(request: Request, payload: ChatPayload) -> dict[str, Any]:
+    total_started = perf_counter()
     http: httpx.AsyncClient = request.app.state.http
     available_collections = list_collection_names()
     target_collections = [
@@ -232,7 +234,11 @@ async def chat(request: Request, payload: ChatPayload) -> dict[str, Any]:
     if not question:
         raise HTTPException(status_code=400, detail="Pregunta vacia")
 
+    embed_started = perf_counter()
     vector = await embed_text(http, question)
+    embed_ms = round((perf_counter() - embed_started) * 1000, 2)
+
+    search_started = perf_counter()
     matches: list[dict[str, Any]] = []
     for collection in target_collections:
         hits = qdrant.search(collection_name=collection, query_vector=vector, limit=TOP_K)
@@ -246,19 +252,36 @@ async def chat(request: Request, payload: ChatPayload) -> dict[str, Any]:
                     "text": payload_data.get("text", ""),
                 }
             )
+    search_ms = round((perf_counter() - search_started) * 1000, 2)
 
     matches = [item for item in matches if item["text"]]
     matches.sort(key=lambda item: item["score"], reverse=True)
     top_matches = matches[:TOP_K]
 
     if not top_matches:
+        total_ms = round((perf_counter() - total_started) * 1000, 2)
         return {
             "answer": "No encontre informacion relacionada en los documentos cargados.",
             "sources": [],
+            "timings_ms": {
+                "embed": embed_ms,
+                "search": search_ms,
+                "llm": 0.0,
+                "total": total_ms,
+            },
         }
 
+    llm_started = perf_counter()
     answer = await call_llm(http, question, top_matches, payload.model)
+    llm_ms = round((perf_counter() - llm_started) * 1000, 2)
+    total_ms = round((perf_counter() - total_started) * 1000, 2)
     return {
         "answer": answer,
         "sources": top_matches,
+        "timings_ms": {
+            "embed": embed_ms,
+            "search": search_ms,
+            "llm": llm_ms,
+            "total": total_ms,
+        },
     }
