@@ -92,9 +92,7 @@ async def call_llm(
     context_blocks: list[dict[str, Any]],
     model: str | None,
 ) -> str:
-    selected_model = model or CHAT_MODEL
-    if selected_model == EMBED_MODEL:
-        selected_model = CHAT_MODEL
+    selected_model = CHAT_MODEL
 
     snippets = []
     for index, block in enumerate(context_blocks, start=1):
@@ -165,16 +163,7 @@ def health() -> dict[str, str]:
 
 @app.get("/api/models")
 async def models(request: Request) -> dict[str, Any]:
-    http: httpx.AsyncClient = request.app.state.http
-    response = await http.get(f"{OLLAMA_BASE}/api/tags", timeout=30)
-    response.raise_for_status()
-    payload = response.json()
-    items = [
-        model["name"]
-        for model in payload.get("models", [])
-        if model.get("name") != EMBED_MODEL
-    ]
-    return {"models": items, "default": CHAT_MODEL}
+    return {"models": [CHAT_MODEL], "default": CHAT_MODEL}
 
 
 @app.get("/api/collections")

@@ -53,7 +53,7 @@ services:
       QDRANT_PORT: 6333
       OLLAMA_HOST: ollama
       OLLAMA_PORT: 11434
-      CHAT_MODEL: ${CHAT_MODEL:-llama3.2:3b}
+      CHAT_MODEL: ${CHAT_MODEL:-qwen2.5:0.5b}
       EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
       EMBED_DIM: ${EMBED_DIM:-1024}
       RAG_TOP_K: ${RAG_TOP_K:-6}
@@ -121,13 +121,13 @@ services:
           sleep 2
         done
         echo '[init] Descargando modelos (skip si ya existen)...'
-        ollama pull ${CHAT_MODEL:-llama3.2:3b}
+        ollama pull ${CHAT_MODEL:-qwen2.5:0.5b}
         ollama pull ${EMBED_MODEL:-bge-m3}
         echo '[init] Modelos listos'
         wait $$OLLAMA_PID
       "
     healthcheck:
-      test: ["CMD-SHELL", "ollama list | grep -q '${CHAT_MODEL:-llama3.2:3b}' && ollama list | grep -q '${EMBED_MODEL:-bge-m3}'"]
+      test: ["CMD-SHELL", "ollama list | grep -q '${CHAT_MODEL:-qwen2.5:0.5b}' && ollama list | grep -q '${EMBED_MODEL:-bge-m3}'"]
       interval: 15s
       timeout: 10s
       retries: 20
