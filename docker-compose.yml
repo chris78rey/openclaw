@@ -9,17 +9,11 @@
 #    PUBLIC_BOT_HOST    (default: bot.da-tica.com)
 #    PUBLIC_RAG_HOST    (default: rag.da-tica.com)
 #    OLLAMA_MODEL       (default: llama3.2:3b)
-#    OLLAMA_MEM_LIMIT   (default: 4G)
+#    OLLAMA_MEM_LIMIT   (default: 8G)
 #    QDRANT_MEM_LIMIT   (default: 512M)
 #    DOCKER_NETWORK     (default: coolify)
 #
 # ═══════════════════════════════════════════════════════════════
-
-x-logging: &default-logging
-  driver: json-file
-  options:
-    max-size: "10m"
-    max-file: "3"
 
 services:
 
@@ -35,7 +29,11 @@ services:
     init: true
     stdin_open: true
     tty: true
-    logging: *default-logging
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
@@ -116,9 +114,9 @@ services:
           }
         }
         EOF
-        exec openclaw gateway --bind lan --port 18789 --allow-unconfigured
+        exec openclaw gateway --bind lan --port 18789
     networks:
-      - coolify
+      - app_net
     depends_on:
       rag-api:
         condition: service_healthy
@@ -155,14 +153,13 @@ services:
     expose:
       - "8000"
     networks:
-      - coolify
+      - app_net
     depends_on:
       qdrant:
-        condition: service_healthy
+        condition: service_started
       ollama:
         condition: service_healthy
     healthcheck:
-      # Python existe seguro en la imagen — no depende de curl/wget
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 15s
       timeout: 5s
@@ -184,23 +181,13 @@ services:
     image: qdrant/qdrant:latest
     restart: unless-stopped
     logging: *default-logging
-    # TODO: Activar cuando rag-api soporte api_key en QdrantClient
-    # environment:
-    #   QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
     volumes:
       - qdrant_data:/qdrant/storage
     expose:
       - "6333"
       - "6334"
     networks:
-      - coolify
-    healthcheck:
-      # Qdrant image (Debian-based) trae wget
-      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      - app_net
     deploy:
       resources:
         limits:
@@ -218,7 +205,7 @@ services:
     expose:
       - "11434"
     networks:
-      - coolify
+      - app_net
     entrypoint: >
       sh -c "
         ollama serve &
@@ -232,11 +219,10 @@ services:
         ollama pull qwen2.5:7b
         ollama pull llama3.2:3b
         ollama pull bge-m3
-        echo '[init] Modelos listos ✓'
+        echo '[init] Modelos listos'
         wait $$OLLAMA_PID
       "
     healthcheck:
-      # Verifica que los 3 modelos estén realmente descargados
       test: ["CMD-SHELL", "ollama list | grep -q 'llama3.2:3b' && ollama list | grep -q 'qwen2.5:7b' && ollama list | grep -q 'bge-m3'"]
       interval: 15s
       timeout: 5s
@@ -245,7 +231,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${OLLAMA_MEM_LIMIT:-4G}
+          memory: ${OLLAMA_MEM_LIMIT:-8G}
 
 volumes:
   openclaw_data:
@@ -254,6 +240,6 @@ volumes:
   ollama_data:
 
 networks:
-  coolify:
+  app_net:
     name: ${DOCKER_NETWORK:-coolify}
     external: true
