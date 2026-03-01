@@ -71,9 +71,9 @@ services:
             "mode": "merge",
             "providers": {
               "ollama": {
-                "api": "ollama",
-                "apiKey": "$${OLLAMA_API_KEY}",
-                "baseUrl": "http://ollama:11434",
+                "api": "openai-compatible",
+                "apiKey": "${OLLAMA_API_KEY}",
+                "baseUrl": "http://ollama:11434/v1",
                 "models": [
                   {
                     "id": "qwen2.5:7b",
